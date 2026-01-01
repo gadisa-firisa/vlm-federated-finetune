@@ -1,0 +1,113 @@
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vlm-federated"
+version = "1.0.0"
+description = ""
+license = "Apache-2.0"
+
+dependencies = [
+    "flwr[simulation]>=1.23.0",
+    "flwr-datasets[vision]>=0.5.0",
+    "torch==2.7.1",
+    "torchvision==0.22.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flwr.app]
+publisher = "gadisa"
+
+[tool.flwr.app.components]
+serverapp = "vlm_federated.server_app:app"
+clientapp = "vlm_federated.client_app:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 3
+
+[tool.flwr.app.config.model]
+name = "Qwen/Qwen-2.5-VL-3B-Instruct"
+
+[tool.flwr.app.config.quantization]
+load_in_4bit = true
+bnb_4bit_use_double_quant = false
+bnb_4bit_quant_type = "nf4"
+# one of: bfloat16, float16, float32
+bnb_4bit_compute_dtype = "bfloat16"
+
+[tool.flwr.app.config.static.dataset]
+name = "tatsu-lab/alpaca"  # fallback if per-modality mapping not provided
+
+# Per-modality dataset mapping
+[tool.flwr.app.config.static.datasets]
+TEXT_ONLY = "tatsu-lab/alpaca"
+PAIRED = "coco_captions"
+IMAGE_ONLY = "cifar10"
+
+[tool.flwr.app.config.strategy]
+name = "modality_aware"  # one of: "fedavg", "modality_aware", "alternating"
+fraction_train = 0.5
+fraction_evaluate = 0.0
+
+[tool.flwr.app.config.strategy.modality_weights]
+TEXT_ONLY = 0.5
+IMAGE_ONLY = 0.75
+PAIRED = 1.0
+
+[tool.flwr.app.config.train]
+seq_length = 512
+learning_rate_max = 1e-5
+learning_rate_min = 1e-6
+save_every_round = 1
+
+[tool.flwr.app.config.train.training_arguments]
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 1
+num_train_epochs = 1
+logging_steps = 1
+optim = "adamw_torch"
+save_strategy = "no"
+bf16 = false
+report_to = ["none"]
+gradient_checkpointing = false
+
+[tool.flwr.app.config.lora]
+r = 8
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+lora_alpha = 16
+lora_dropout = 0.0
+task_type = "CAUSAL_LM"
+
+# Control client-type assignment by proportions (mild example)
+[tool.flwr.app.config.static]
+client_distribution = [0.5, 0.3, 0.2]  # TEXT_ONLY, IMAGE_ONLY, PAIRED
+client_order = ["TEXT_ONLY", "IMAGE_ONLY", "PAIRED"]
+strategy.name="modality_aware"
+strategy.modality_weights = {"TEXT_ONLY": 0.5,
+  "IMAGE_ONLY": 0.75, "PAIRED": 1.0}
+strategy.name="alternating"
+strategy.odd_round_weights = {"TEXT_ONLY": 1.0,
+  "IMAGE_ONLY": 0.75, "PAIRED": 0.5}
+strategy.even_round_weights = {"TEXT_ONLY": 0.5,
+  "IMAGE_ONLY": 0.9, "PAIRED": 1.1}
+
+[tool.flwr.app.config.static]
+datasets.TEXT_ONLY = "tatsu-lab/alpaca"
+datasets.PAIRED = "coco_captions"
+datasets.IMAGE_ONLY = "cifar10"
+
+[tool.flwr.federations]
+default = "local-simulation"
+
+
+[tool.flwr.federations.local-simulation]
+options.num-supernodes = 10
+
+
+[tool.flwr.federations.remote-federation]
+address = "<SUPERLINK-ADDRESS>:<PORT>"
+insecure = true 
